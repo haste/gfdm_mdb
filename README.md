@@ -9,6 +9,14 @@ versions 1 to 6, and editable JSON.
 See [MDB format](MDB_FORMAT.md) for the binary layouts, field meanings, and
 MDBE cipher.
 
+## Download
+
+Download the latest standalone executable from the
+[GitHub Releases page](https://github.com/haste/gfdm_mdb/releases/latest):
+
+- [Linux x86-64](https://github.com/haste/gfdm_mdb/releases/latest/download/gfdm_mdb_linux_x86_64)
+- [Windows x86-64](https://github.com/haste/gfdm_mdb/releases/latest/download/gfdm_mdb_windows_x86_64.exe)
+
 ## Commands
 
 ```text
