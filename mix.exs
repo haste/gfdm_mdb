@@ -46,7 +46,7 @@ defmodule GfdmMdb.MixProject do
     [
       {:owl, "~> 0.13.1"},
       {:saxy, "~> 1.6"},
-      {:burrito, "~> 1.5.0", only: :prod, runtime: false},
+      {:burrito, "~> 1.6.0", only: :prod, runtime: false},
       {:credo, "~> 1.7.19", only: [:dev, :test], runtime: false},
       {:ex_slop, "~> 0.4.2", only: [:dev, :test], runtime: false}
     ]
