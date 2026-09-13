@@ -25,7 +25,7 @@ defmodule GfdmMdb.Cli.Arguments do
         normalize(to_string(command), parsed)
 
       {:error, reason} ->
-        {_, error} = usage(reason |> :argparse.format_error() |> IO.chardata_to_string())
+        {_, error} = usage(format_error(reason))
         {:error, error, json_option(arguments)}
 
       {:ok, _parsed, _path, _definition} ->
@@ -153,6 +153,12 @@ defmodule GfdmMdb.Cli.Arguments do
         result
     end
   end
+
+  defp format_error({path, %{long: option}, :undefined, "expected argument"}) do
+    "#{Enum.join(path, " ")}: -#{option} requires a value"
+  end
+
+  defp format_error(reason), do: reason |> :argparse.format_error() |> IO.chardata_to_string()
 
   defp normalize(command, parsed) do
     {input, opts} = Map.pop(parsed, :input, [])
