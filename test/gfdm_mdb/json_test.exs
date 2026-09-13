@@ -2,7 +2,7 @@ defmodule GfdmMdb.JsonTest do
   use ExUnit.Case, async: true
 
   alias GfdmMdb.Codec.{Cipher, Json}
-  alias GfdmMdb.{Database, Fixture}
+  alias GfdmMdb.{Database, Fixture, Schema}
 
   @schemas [{100, nil}, {101, nil}, {102, nil}, {202, nil}] ++ Enum.map(1..6, &{203, &1})
   @classic %{
@@ -36,6 +36,13 @@ defmodule GfdmMdb.JsonTest do
   }
 
   test "every schema round trips named records and preserved metadata without changing native bytes" do
+    names =
+      @schemas
+      |> Enum.flat_map(fn {format, version} -> Schema.song_fields(format, version) end)
+      |> Enum.map(& &1.name)
+      |> Enum.uniq()
+      |> Enum.sort()
+
     for {format, version} <- @schemas do
       database = Fixture.database(format, version)
       song = hd(database.songs) |> put_in(["difficulty", "classic"], @classic)
@@ -63,17 +70,24 @@ defmodule GfdmMdb.JsonTest do
       assert_native_difficulties(bytes, format)
       assert {:ok, json} = GfdmMdb.encode(database, encoding: :json)
       assert {:ok, decoded} = GfdmMdb.decode(json)
-      assert decoded == database
       assert {:ok, ^bytes} = GfdmMdb.encode(decoded)
 
       envelope = JSON.decode!(json)
+      assert decoded.songs == envelope["songs"]
+      assert decoded.identity == "test-release"
       assert Enum.sort(Map.keys(envelope)) == ~w(courses identity json_version native songs)
       assert envelope["json_version"] == 1
       assert envelope["native"]["format"] == format
       assert envelope["native"]["schema_version"] == version
       assert envelope["identity"] == "test-release"
 
-      assert envelope["songs"] == database.songs
+      [exported] = envelope["songs"]
+
+      assert Enum.sort(Map.keys(exported)) == names
+
+      for name <- names -- Map.keys(song), do: assert(exported[name] == nil)
+
+      assert Map.keys(exported["difficulty"]) |> Enum.sort() == ["classic", "modern"]
       assert envelope["courses"] == database.courses
       assert envelope["native"]["header"] == database.header
     end
@@ -94,7 +108,8 @@ defmodule GfdmMdb.JsonTest do
       assert Database.header(database)["record_count"] == 2
       assert Database.header(database)["course_count"] == 0
       assert {:ok, bytes} = GfdmMdb.encode(database)
-      assert {:ok, ^database} = GfdmMdb.decode(bytes)
+      assert {:ok, native} = GfdmMdb.decode(bytes)
+      assert Json.envelope(native) == Json.envelope(database)
 
       empty = envelope |> Map.put("songs", []) |> Map.put("courses", [])
       assert {:ok, database} = empty |> Json.pretty() |> GfdmMdb.decode()
@@ -132,7 +147,8 @@ defmodule GfdmMdb.JsonTest do
     assert {:ok, json} = GfdmMdb.encode(database, encoding: :json)
     bytes = <<0xEF, 0xBB, 0xBF>> <> json
 
-    assert {:ok, ^database} = GfdmMdb.decode(bytes)
+    assert {:ok, decoded} = GfdmMdb.decode(bytes)
+    assert Json.envelope(decoded) == Json.envelope(database)
     assert {:ok, %{"bpm" => 150}} = Json.parse(<<0xEF, 0xBB, 0xBF>> <> ~s({"bpm":150}))
 
     assert {:error, %{code: :duplicate_key}} =
@@ -141,7 +157,7 @@ defmodule GfdmMdb.JsonTest do
     assert {:error, %{code: :json}} = GfdmMdb.decode(bytes <> " garbage")
   end
 
-  test "named difficulties require the schema's exact families, instruments, levels and integer bounds" do
+  test "named difficulties validate complete supplied families and reject unknown names and values" do
     database = Fixture.database(203, 6)
     record = hd(database.songs)
 
@@ -149,7 +165,6 @@ defmodule GfdmMdb.JsonTest do
           Map.put(record, "typo", 0),
           Map.delete(record, "bpm"),
           Map.put(record, "difficulty", nil),
-          update_in(record, ["difficulty"], &Map.delete(&1, "modern")),
           update_in(record, ["difficulty", "classic"], &Map.delete(&1, "open")),
           put_in(record, ["difficulty", "modern", "open"], %{}),
           put_in(record, ["difficulty", "classic", "guitar", "master"], 99),
@@ -171,12 +186,94 @@ defmodule GfdmMdb.JsonTest do
     classic = hd(classic_database.songs)
     mixed = put_in(classic, ["difficulty", "modern"], record["difficulty"]["modern"])
 
-    assert {:error, %{code: :unknown_field}} =
+    assert {:ok, decoded} =
              classic_database
              |> Json.envelope()
              |> Map.put("songs", [mixed])
              |> JSON.encode!()
              |> GfdmMdb.decode()
+
+    assert hd(decoded.songs) == mixed
+    assert {:error, %{code: :unknown_field}} = GfdmMdb.encode(decoded)
+  end
+
+  test "JSON accepts newer and older records independently of native metadata" do
+    for {{source_format, source_version}, {format, version}} <- [
+          {{100, nil}, {203, 6}},
+          {{203, 6}, {100, nil}}
+        ] do
+      envelope = Fixture.database(source_format, source_version) |> Json.envelope()
+      song = hd(Fixture.database(format, version).songs)
+
+      assert {:ok, decoded} =
+               envelope |> Map.put("songs", [song]) |> Json.pretty() |> GfdmMdb.decode()
+
+      assert hd(decoded.songs) == song
+    end
+  end
+
+  test "JSON stores native type variants until explicit target conversion validates them" do
+    envelope = Fixture.database(100) |> Json.envelope()
+    [song] = envelope["songs"]
+
+    song =
+      Map.merge(song, %{
+        "seq_flag" => 65_535,
+        "pad_diff" => 65_535,
+        "category_kana" => -128,
+        "modern_movie_disp_id" => -1,
+        "disable_area" => [1, 2, 3],
+        "title_name" => "Long display title",
+        "data_ver" => 119
+      })
+
+    assert {:ok, decoded} =
+             envelope |> Map.put("songs", [song]) |> Json.pretty() |> GfdmMdb.decode()
+
+    assert {:ok, json} = GfdmMdb.encode(decoded, encoding: :json)
+    assert {:ok, ^decoded} = GfdmMdb.decode(json)
+    assert {:error, _error} = GfdmMdb.encode(decoded)
+
+    assert %{errors: [%{code: :conversion}], reports: %{conversion: %{issues: issues}}} =
+             GfdmMdb.transform(decoded, "convert", target: {100, nil}, allow_loss: true)
+
+    assert Enum.any?(issues, &(&1.kind == :incompatible and &1.path == "songs.seq_flag"))
+    assert Enum.any?(issues, &(&1.kind == :removed and &1.path == "songs.data_ver"))
+
+    for {name, value} <- [
+          {"typo", nil},
+          {"bpm", nil},
+          {"seq_flag", 65_536},
+          {"category_kana", 256},
+          {"modern_movie_disp_id", -129},
+          {"disable_area", [0]},
+          {"data_ver", "119"}
+        ] do
+      invalid = Map.put(song, name, value)
+
+      assert {:error, _error} =
+               envelope |> Map.put("songs", [invalid]) |> Json.pretty() |> GfdmMdb.decode()
+    end
+  end
+
+  test "null version fields stay missing for native conversion and defaults can fill them" do
+    envelope = Fixture.database(203, 4) |> Json.envelope()
+    assert hd(envelope["songs"])["data_ver"] == nil
+    assert {:ok, decoded} = envelope |> Json.pretty() |> GfdmMdb.decode()
+
+    assert %{
+             errors: [%{code: :conversion}],
+             reports: %{conversion: %{issues: [%{kind: :missing, path: "songs.data_ver"}]}}
+           } =
+             GfdmMdb.transform(decoded, "convert", target: {203, 5})
+
+    assert %{errors: [], database: target} =
+             GfdmMdb.transform(decoded, "convert",
+               target: {203, 5},
+               defaults: %{"data_ver" => 119}
+             )
+
+    assert hd(target.songs)["data_ver"] == 119
   end
 
   defp assert_native_difficulties(xml, 203) do

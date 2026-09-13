@@ -1,14 +1,16 @@
 defmodule GfdmMdb.Codec.Json do
   @moduledoc "Codec for MDB JSON: shared records and separate native reconstruction metadata."
 
-  alias GfdmMdb.{Database, Result, Validation}
+  alias GfdmMdb.{Database, Result, Schema, Validation}
 
   @keys ~w(json_version identity native songs courses)
 
   @doc "Decodes an envelope into a database candidate. GfdmMdb.decode/2 validates it."
   @spec decode(binary()) :: GfdmMdb.result(Database.t())
   def decode(bytes) do
-    with {:ok, map} <- parse(bytes), do: database(map)
+    with {:ok, map} <- parse(bytes) do
+      database(map)
+    end
   end
 
   @doc "Encodes a valid database. `GfdmMdb.encode/2` validates first."
@@ -58,6 +60,8 @@ defmodule GfdmMdb.Codec.Json do
 
   @spec envelope(Database.t()) :: %{String.t() => term()}
   def envelope(database) do
+    fields = Schema.Json.song_fields()
+
     native = %{
       "format" => database.format,
       "encrypted" => database.encrypted,
@@ -73,7 +77,7 @@ defmodule GfdmMdb.Codec.Json do
       "json_version" => 1,
       "identity" => database.identity,
       "native" => native,
-      "songs" => database.songs,
+      "songs" => Enum.map(database.songs, &Schema.Json.expand(&1, fields)),
       "courses" => database.courses
     }
   end
@@ -108,8 +112,9 @@ defmodule GfdmMdb.Codec.Json do
     end
   end
 
-  defp database(_value),
-    do: {:error, Result.diagnostic(:json, "", "Expected a JSON envelope object")}
+  defp database(_value) do
+    {:error, Result.diagnostic(:json, "", "Expected a JSON envelope object")}
+  end
 
   defp native(native) do
     with :ok <-

@@ -342,6 +342,55 @@ defmodule GfdmMdb.CliTest do
              hd(Fixture.database().songs)["difficulty"]["classic"]
   end
 
+  test "JSON staging edits fields from newer schemas and retains null placeholders", %{
+    input: input,
+    tmp_dir: directory
+  } do
+    json = Path.join(directory, "intermediate.json")
+    xml = Path.join(directory, "new.xml")
+    patch = Path.join(directory, "new-fields.json")
+    Fixture.write(Fixture.database(203, 3), input)
+    assert json_result(["convert", input, "--output", json], 0)["valid"]
+
+    assert json_result(
+             [
+               "edit",
+               json,
+               "--id",
+               "1120",
+               "--set",
+               "data_ver=119",
+               "--set",
+               "artist_title_ascii=An artist",
+               "--in-place"
+             ],
+             0
+           )["valid"]
+
+    assert json_result(["verify", json], 0)["valid"]
+    staged = JSON.decode!(File.read!(json))
+
+    assert [%{"data_ver" => 119, "artist_title_ascii" => "An artist", "seq_id" => nil}] =
+             staged["songs"]
+
+    File.write!(
+      patch,
+      Json.pretty(%{
+        "artist_order_ascii" => 0,
+        "artist_order_kana" => 0,
+        "artist_category_kana" => 0
+      })
+    )
+
+    assert json_result(["edit", json, "--id", "1120", "--patch", patch, "--in-place"], 0)["valid"]
+
+    assert json_result(["convert", json, "--target", "203:6", "--output", xml], 0)["valid"]
+    assert {:ok, target} = Fixture.read(xml)
+    assert hd(target.songs)["data_ver"] == 119
+    assert hd(target.songs)["seq_id"] == 1120
+    assert hd(target.songs)["artist_title_ascii"] == "An artist"
+  end
+
   test "conversion previews and writes reject the same unencodable output", %{
     input: input,
     tmp_dir: directory

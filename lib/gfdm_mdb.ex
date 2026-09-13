@@ -32,20 +32,26 @@ defmodule GfdmMdb do
           {:error, Result.diagnostic(:encoding, "encoding", "Expected binary, xml, or json")}
       end
 
-    with {:ok, decoded} <- result, do: decode_database(decoded, opts)
+    with {:ok, decoded} <- result do
+      decode_database(decoded, opts)
+    end
   end
 
   @spec encode(Database.t(), keyword()) :: result(binary())
   def encode(database, opts \\ []) do
+    database = output_database(database, opts)
     database = %{database | encrypted: Keyword.get(opts, :encrypted, database.encrypted)}
 
-    with :ok <- Validation.validate(database), do: encode_valid(database, opts)
+    with :ok <- Validation.validate(database, Keyword.get(opts, :encoding, :native)) do
+      encode_valid(database, opts)
+    end
   end
 
   @doc "Validates a candidate, computes its changes, and encodes it for preview or installation."
   @spec prepare(Database.t(), Result.t(), keyword()) :: Result.t()
   def prepare(before, result, opts \\ []) do
-    verification = Validation.verify(result.database)
+    result = output_result(result, opts)
+    verification = Validation.verify(result.database, opts)
 
     result = %{
       result
@@ -73,9 +79,22 @@ defmodule GfdmMdb do
   ### Helpers
   ###
 
+  defp output_result(%Result{database: %Database{} = database} = result, opts) do
+    %{result | database: output_database(database, opts)}
+  end
+
+  defp output_result(result, _opts), do: result
+
+  defp output_database(database, opts) do
+    if opts[:encoding] == :json, do: database, else: Schema.Json.native_values(database)
+  end
+
   defp decode_database(%Database{} = database, opts) do
     database = %{database | identity: Keyword.get(opts, :identity, database.identity)}
-    with :ok <- Validation.validate(database), do: {:ok, database}
+
+    with :ok <- Validation.validate(database, :json) do
+      {:ok, database}
+    end
   end
 
   defp decode_database({attributes, header}, opts) do
@@ -92,20 +111,25 @@ defmodule GfdmMdb do
     end
   end
 
-  defp operation(database, "add", opts),
-    do: Database.add(database, opts[:record], opts[:kind])
+  defp operation(database, "add", opts) do
+    Database.add(database, opts[:record], opts[:kind])
+  end
 
-  defp operation(database, "edit", opts),
-    do: Database.edit(database, opts[:id], opts[:patch], opts[:kind])
+  defp operation(database, "edit", opts) do
+    Database.edit(database, opts[:id], opts[:patch], opts[:kind])
+  end
 
-  defp operation(database, "clone", opts),
-    do: Database.clone(database, opts[:id], opts[:new_id], opts[:patch], opts[:kind])
+  defp operation(database, "clone", opts) do
+    Database.clone(database, opts[:id], opts[:new_id], opts[:patch], opts[:kind])
+  end
 
-  defp operation(database, "remove", opts),
-    do: Database.remove(database, opts[:id], opts[:kind])
+  defp operation(database, "remove", opts) do
+    Database.remove(database, opts[:id], opts[:kind])
+  end
 
-  defp operation(database, "reindex", opts),
-    do: Reindexer.reindex(database, opts[:keys], opts)
+  defp operation(database, "reindex", opts) do
+    Reindexer.reindex(database, opts[:keys], opts)
+  end
 
   defp encode_result(result, opts) do
     database = %{

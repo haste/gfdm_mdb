@@ -72,7 +72,7 @@ defmodule GfdmMdb.Database do
     with :ok <-
            Validation.validate_record(
              record,
-             Schema.record_fields(database, kind),
+             Schema.record_fields(database, kind, :json),
              Atom.to_string(kind),
              id
            ) do

@@ -2,11 +2,12 @@ defmodule GfdmMdb.Conversion do
   @moduledoc "Schema conversion candidates with explicit replacements and loss approval."
 
   alias GfdmMdb.{Database, Record, Result, Schema, Validation}
+  alias GfdmMdb.Conversion.Rules
   alias GfdmMdb.Schema.Field
 
   @type schema :: %{format: Schema.format(), schema_version: Schema.version()}
   @type issue :: %{
-          kind: :missing | :removed | :incompatible,
+          kind: :missing | :removed | :incompatible | :filled,
           record_id: integer() | nil,
           path: String.t(),
           message: String.t(),
@@ -26,17 +27,22 @@ defmodule GfdmMdb.Conversion do
          overrides = Keyword.get(opts, :overrides, %{}),
          fields = Schema.song_fields(format, version),
          :ok <- validate_options(defaults, overrides, fields, database) do
+      database = Schema.Json.native_values(database)
       target = Database.new(format, version)
 
       {songs, issues} =
         database.songs
         |> Enum.map(fn song ->
+          override = Map.get(overrides, Integer.to_string(song["music_id"]), %{})
+
           values =
             defaults
             |> Record.merge(song)
-            |> Record.merge(Map.get(overrides, Integer.to_string(song["music_id"]), %{}))
+            |> Record.merge(override)
 
-          map_record(values, fields, song["music_id"], "songs.")
+          {values, filled} = Rules.apply(values, fields, override)
+          {record, issues} = map_record(values, fields, song["music_id"], "songs.")
+          {record, filled ++ issues}
         end)
         |> Enum.unzip()
 
@@ -54,7 +60,10 @@ defmodule GfdmMdb.Conversion do
       issues = List.flatten(issues) ++ header_loss(database, target)
 
       blockers =
-        Enum.reject(issues, &(&1.kind == :removed and Keyword.get(opts, :allow_loss, false)))
+        Enum.reject(issues, fn issue ->
+          issue.kind == :filled or
+            (issue.kind == :removed and Keyword.get(opts, :allow_loss, false))
+        end)
 
       report = %{
         source: %{format: database.format, schema_version: database.schema_version},
@@ -89,14 +98,17 @@ defmodule GfdmMdb.Conversion do
     Result.diagnostic(:conversion, "", message)
   end
 
-  defp required_action(:missing),
-    do: "Missing target fields require --defaults or --overrides"
+  defp required_action(:missing) do
+    "Missing target fields require --defaults or --overrides"
+  end
 
-  defp required_action(:incompatible),
-    do: "Incompatible target values require --overrides"
+  defp required_action(:incompatible) do
+    "Incompatible target values require --overrides"
+  end
 
-  defp required_action(:removed),
-    do: "Removing source fields requires --allow-loss"
+  defp required_action(:removed) do
+    "Removing source fields requires --allow-loss"
+  end
 
   defp validate_options(defaults, overrides, fields, database) do
     with :ok <-
@@ -161,11 +173,13 @@ defmodule GfdmMdb.Conversion do
     end)
   end
 
-  defp map_field(value, %{name: "difficulty", fields: fields}, id, path) when is_map(value),
-    do: map_record(value, fields, id, path <> ".")
+  defp map_field(value, %{name: "difficulty", fields: fields}, id, path) when is_map(value) do
+    map_record(value, fields, id, path <> ".")
+  end
 
-  defp map_field(:missing, _field, id, path),
-    do: {:missing, [issue(:missing, id, path, "Supply a default or record override", nil)]}
+  defp map_field(:missing, _field, id, path) do
+    {:missing, [issue(:missing, id, path, "Supply a default or record override", nil)]}
+  end
 
   defp map_field(value, field, id, path) do
     case Field.validate(field, value, path, id) do

@@ -32,9 +32,15 @@ defmodule GfdmMdb.Schema do
   def song_fields(202, nil), do: Schema.Format202.fields()
   def song_fields(format, nil) when format in [100, 101, 102], do: Schema.Format100.fields(format)
 
-  @spec record_fields(GfdmMdb.Database.t(), GfdmMdb.Database.kind()) :: [Schema.Field.t()]
-  def record_fields(database, :songs), do: song_fields(database.format, database.schema_version)
-  def record_fields(_database, :courses), do: course_fields()
+  @spec record_fields(GfdmMdb.Database.t(), GfdmMdb.Database.kind(), atom()) :: [Schema.Field.t()]
+  def record_fields(database, kind, encoding \\ :native)
+  def record_fields(_database, :songs, :json), do: Schema.Json.song_fields()
+
+  def record_fields(database, :songs, _encoding) do
+    song_fields(database.format, database.schema_version)
+  end
+
+  def record_fields(_database, :courses, _encoding), do: course_fields()
 
   @spec id_field(GfdmMdb.Database.kind()) :: String.t()
   def id_field(:songs), do: "music_id"
@@ -116,8 +122,9 @@ defmodule GfdmMdb.Schema do
   end
 
   @spec difficulty([:classic | :modern]) :: Field.t()
-  def difficulty(families),
-    do: Field.object("difficulty", Enum.map(families, &Difficulty.field/1))
+  def difficulty(families) do
+    Field.object("difficulty", Enum.map(families, &Difficulty.field/1))
+  end
 
   @spec versions() :: [1..6]
   def versions do

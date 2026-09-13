@@ -100,7 +100,13 @@ defmodule GfdmMdbTest do
     assert {:ok, json} = GfdmMdb.encode(database, encoding: :json)
     envelope = JSON.decode!(json)
 
-    for text <- ["1234567890123456", "日本語日本語", "a\0b", nil, 123] do
+    for text <- ["1234567890123456", "日本語日本語", "a\0b"] do
+      edited = Map.put(envelope, "songs", [Map.put(hd(envelope["songs"]), "title_ascii", text)])
+      assert {:ok, decoded} = edited |> JSON.encode!() |> GfdmMdb.decode()
+      assert {:error, %{code: :title, record_id: 1120}} = GfdmMdb.encode(decoded)
+    end
+
+    for text <- [nil, 123] do
       invalid = Map.put(envelope, "songs", [Map.put(hd(envelope["songs"]), "title_ascii", text)])
 
       assert {:error, %{code: :title, record_id: 1120}} =

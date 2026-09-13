@@ -5,16 +5,17 @@ defmodule GfdmMdb.Schema.Field do
   alias GfdmMdb.Validation
 
   @type integer_type :: :bool | :u8 | :u16 | :u32 | :s8 | :s16 | :s32
-  @type field_type :: integer_type() | :hex | :title | :str | :object
-  @type value :: integer() | String.t() | [integer()] | %{String.t() => value()}
+  @type field_type :: integer_type() | :hex | :title | :str | :object | :union
+  @type value :: integer() | String.t() | [integer()] | %{String.t() => value()} | nil
   @type t :: %__MODULE__{
           name: String.t(),
           type: field_type(),
           count: pos_integer(),
-          fields: [t()]
+          fields: [t()],
+          optional: boolean()
         }
 
-  defstruct [:name, :type, :count, fields: []]
+  defstruct [:name, :type, :count, fields: [], optional: false]
 
   @spec new(String.t(), field_type(), pos_integer()) :: t()
   def new(name, type, count) do
@@ -56,8 +57,11 @@ defmodule GfdmMdb.Schema.Field do
   end
 
   @spec neutral(t()) :: value()
-  def neutral(%{type: :object, fields: fields}),
-    do: Map.new(fields, &{&1.name, neutral(&1)})
+  def neutral(%{type: :object, fields: fields}) do
+    Map.new(fields, &{&1.name, neutral(&1)})
+  end
+
+  def neutral(%{type: :union, fields: [field | _rest]}), do: neutral(field)
 
   def neutral(%{type: :hex, count: count}) do
     String.duplicate("00", count)
@@ -79,8 +83,17 @@ defmodule GfdmMdb.Schema.Field do
           :ok | {:error, GfdmMdb.Result.diagnostic()}
   def validate(field, value, path, id \\ nil)
 
-  def validate(%{type: :object, fields: fields}, value, path, id),
-    do: Validation.validate_record(value, fields, path, id)
+  def validate(%{optional: true}, nil, _path, _id), do: :ok
+
+  def validate(%{type: :object, fields: fields}, value, path, id) do
+    Validation.validate_record(value, fields, path, id)
+  end
+
+  def validate(%{type: :union, fields: fields} = field, value, path, id) do
+    if valid?(field, value),
+      do: :ok,
+      else: validate(hd(fields), value, path, id)
+  end
 
   def validate(%{type: :title} = field, value, path, id) do
     Validation.check(
@@ -103,8 +116,15 @@ defmodule GfdmMdb.Schema.Field do
   end
 
   @spec valid?(t(), term()) :: boolean()
-  def valid?(%{type: :object, fields: fields}, value),
-    do: Validation.validate_record(value, fields, "") == :ok
+  def valid?(%{optional: true}, nil), do: true
+
+  def valid?(%{type: :union, fields: fields}, value) do
+    Enum.any?(fields, &valid?(&1, value))
+  end
+
+  def valid?(%{type: :object, fields: fields}, value) do
+    Validation.validate_record(value, fields, "") == :ok
+  end
 
   def valid?(%{type: :hex, count: count}, value) when is_binary(value) do
     case Base.decode16(value, case: :mixed) do

@@ -8,14 +8,14 @@ defmodule GfdmMdb.Cli.RecordPatch do
   @spec build(Database.t(), map()) :: GfdmMdb.result(Database.record_data())
   def build(database, opts) do
     patch = Map.get(opts, :patch, %{})
-    fields = Schema.record_fields(database, opts[:kind])
+    fields = Schema.record_fields(database, opts[:kind], opts[:encoding])
 
     with :ok <- Validation.check(is_map(patch), :usage, "patch", "Patch must be a JSON object"),
          {:ok, record} <- Database.fetch(database, opts[:id], opts[:kind]),
          {:ok, {updated, touched}} <-
            assignments(
              Map.get(opts, :set, []),
-             record,
+             assignment_record(record, fields, opts[:encoding]),
              Record.merge(record, patch),
              Map.keys(patch)
            ),
@@ -28,6 +28,9 @@ defmodule GfdmMdb.Cli.RecordPatch do
   ###
   ### Helpers
   ###
+
+  defp assignment_record(_record, fields, :json), do: Schema.template(fields)
+  defp assignment_record(record, _fields, _encoding), do: record
 
   defp assignments(assignments, original, updated, touched) do
     Enum.reduce_while(assignments, {:ok, {updated, touched}}, fn assignment, {:ok, state} ->
@@ -68,8 +71,9 @@ defmodule GfdmMdb.Cli.RecordPatch do
   defp value(previous, text) when is_binary(previous), do: {:ok, text}
   defp value(_previous, text), do: Json.parse(text)
 
-  defp put(record, [key], value, _name) when is_map(record),
-    do: {:ok, Map.put(record, key, value)}
+  defp put(record, [key], value, _name) when is_map(record) do
+    {:ok, Map.put(record, key, value)}
+  end
 
   defp put(record, [key | rest], value, name) when is_map(record) do
     with {:ok, updated} <- put(Map.get(record, key, %{}), rest, value, name) do
@@ -77,6 +81,7 @@ defmodule GfdmMdb.Cli.RecordPatch do
     end
   end
 
-  defp put(_record, _path, _value, name),
-    do: Arguments.usage("Cannot assign #{name}: a parent value is not an object")
+  defp put(_record, _path, _value, name) do
+    Arguments.usage("Cannot assign #{name}: a parent value is not an object")
+  end
 end

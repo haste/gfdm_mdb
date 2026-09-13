@@ -12,7 +12,7 @@ defmodule GfdmMdb.Validation do
 
   @spec verify(term(), keyword()) :: report()
   def verify(database, opts \\ []) do
-    case validate(database) do
+    case validate(database, Keyword.get(opts, :encoding, :native)) do
       :ok ->
         compatibility_report(database, opts)
 
@@ -62,8 +62,10 @@ defmodule GfdmMdb.Validation do
     end
   end
 
-  @spec validate(term()) :: :ok | {:error, Result.diagnostic()}
-  def validate(%Database{} = database) do
+  @spec validate(term(), atom()) :: :ok | {:error, Result.diagnostic()}
+  def validate(database, encoding \\ :native)
+
+  def validate(%Database{} = database, encoding) do
     with :ok <- Schema.validate(database.format, database.schema_version),
          :ok <- identity(database.identity),
          :ok <- encryption(database),
@@ -76,7 +78,7 @@ defmodule GfdmMdb.Validation do
          :ok <-
            records(
              database.songs,
-             Schema.song_fields(database.format, database.schema_version),
+             Schema.record_fields(database, :songs, encoding),
              "songs",
              "music_id"
            ),
@@ -89,8 +91,9 @@ defmodule GfdmMdb.Validation do
     end
   end
 
-  def validate(_value),
-    do: {:error, Result.diagnostic(:database, "", "Expected a Database struct")}
+  def validate(_value, _encoding) do
+    {:error, Result.diagnostic(:database, "", "Expected a Database struct")}
+  end
 
   @spec encryption(Database.t()) :: :ok | {:error, Result.diagnostic()}
   def encryption(database) do
@@ -151,17 +154,25 @@ defmodule GfdmMdb.Validation do
     end
   end
 
-  def validate_patch(_record, _fields, path, id),
-    do: {:error, Result.diagnostic(:record, path, "Expected an object", id)}
+  def validate_patch(_record, _fields, path, id) do
+    {:error, Result.diagnostic(:record, path, "Expected an object", id)}
+  end
 
   ###
   ### Helpers
   ###
 
-  defp patch_field(record, %{name: "difficulty", fields: fields}, path, id),
-    do: validate_patch(record["difficulty"], fields, path <> ".difficulty", id)
+  defp patch_field(record, %{name: "difficulty", fields: fields}, path, id) do
+    validate_patch(record["difficulty"], fields, path <> ".difficulty", id)
+  end
 
   defp patch_field(record, field, path, id), do: record_field(record, field, path, id)
+
+  defp record_field(record, %{optional: true} = field, path, id) do
+    if Map.has_key?(record, field.name),
+      do: Field.validate(field, record[field.name], path <> "." <> field.name, id),
+      else: :ok
+  end
 
   defp record_field(record, field, path, id) do
     field_path = path <> "." <> field.name
@@ -244,7 +255,7 @@ defmodule GfdmMdb.Validation do
       {Enum.with_index(song["chart_list"])
        |> Enum.any?(fn {value, index} -> rem(index, 8) in [6, 7] and value != 0 end), :reserved,
        "chart_list", "Reserved metric bytes are nonzero"},
-      {Map.get(song, "is_classic_seq", 0) != 0 and not MapSet.member?(ids, song["seq_id"]),
+      {song["is_classic_seq"] not in [nil, 0] and not MapSet.member?(ids, song["seq_id"]),
        :reference, "seq_id",
        "Sequence source is absent from this database. Assets have not been checked"}
     ]
@@ -266,7 +277,7 @@ defmodule GfdmMdb.Validation do
           "is_remaster",
           "license_disp"
         ],
-        Map.has_key?(song, field),
+        song[field] != nil,
         song[field] not in [0, 1] do
       warning(
         :marker,
@@ -332,8 +343,9 @@ defmodule GfdmMdb.Validation do
   def check(condition, code, path, message, id \\ nil)
   def check(true, _code, _path, _message, _id), do: :ok
 
-  def check(false, code, path, message, id),
-    do: {:error, Result.diagnostic(code, path, message, id)}
+  def check(false, code, path, message, id) do
+    {:error, Result.diagnostic(code, path, message, id)}
+  end
 
   @spec each(Enumerable.t(), (term() -> :ok | {:error, error})) :: :ok | {:error, error}
         when error: term()
