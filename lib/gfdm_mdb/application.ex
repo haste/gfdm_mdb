@@ -5,15 +5,13 @@ defmodule GfdmMdb.Application do
 
   @impl Application
   def start(_type, _arguments) do
-    Task.start(fn ->
-      arguments =
-        if System.get_env("__BURRITO") do
-          Enum.map(:init.get_plain_arguments(), &to_string/1)
-        else
-          System.argv()
-        end
+    arguments =
+      if System.get_env("__BURRITO") do
+        Enum.map(:init.get_plain_arguments(), &to_string/1)
+      else
+        System.argv()
+      end
 
-      GfdmMdb.Cli.main(arguments)
-    end)
+    Task.start(GfdmMdb.Cli, :main, [arguments])
   end
 end
