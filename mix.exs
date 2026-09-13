@@ -4,7 +4,7 @@ defmodule GfdmMdb.MixProject do
   def project do
     [
       app: :gfdm_mdb,
-      version: "0.1.0",
+      version: System.get_env("GFDM_MDB_VERSION", "1.0.0"),
       elixir: "~> 1.20",
       start_permanent: Mix.env() == :prod,
       elixirc_paths: elixirc_paths(Mix.env()),
