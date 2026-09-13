@@ -178,14 +178,11 @@ defmodule GfdmMdb.Validation do
     end
   end
 
-  defp records(records, fields, path, id_field) when is_list(records) do
-    with :ok <- each(records, &identified_record(&1, fields, path, id_field)) do
+  defp records(records, fields, path, id_field) do
+    with :ok <- check(is_list(records), :records, path, "Expected an array of records"),
+         :ok <- each(records, &identified_record(&1, fields, path, id_field)) do
       duplicate_ids(records, path, id_field)
     end
-  end
-
-  defp records(_records, _fields, path, _id) do
-    {:error, Result.diagnostic(:records, path, "Expected an array of records")}
   end
 
   defp identified_record(record, fields, path, id_field) do
