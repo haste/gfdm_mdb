@@ -6,6 +6,9 @@ GuitarFreaks, DrumMania, and GITADORA music databases.
 Supports binary MDB/MDBE `100`, `101`, `102`, and `202`, typed XML `203`
 versions 1 to 6, and editable JSON.
 
+See [MDB format](MDB_FORMAT.md) for the binary layouts, field meanings, and
+MDBE cipher.
+
 ## Commands
 
 ```text
@@ -48,7 +51,7 @@ as JSON. Run `gfdm_mdb COMMAND --help` for all options.
 ## Formats
 
 Input format and encryption are detected automatically. Output follows the
-`.json`, `.xml`, or `.bin` extension; binary encryption is preserved through JSON.
+`.json`, `.xml`, or `.bin` extension. Binary encryption is preserved through JSON.
 Keep the `native` metadata when editing JSON.
 
 Changing schemas requires `--target`, such as `--target 203:5`. Use `--dry-run`
