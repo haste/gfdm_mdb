@@ -43,21 +43,18 @@ defmodule GfdmMdb.Codec.Xml do
          :ok <- xml_strings(database.songs, song_fields) do
       course_fields = Schema.course_fields()
 
-      {:ok,
-       IO.iodata_to_binary([
-         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<mdb>\n<header><data>\n",
-         emit(Database.header(database), Schema.header_fields(203)),
-         "</data></header>\n",
-         Enum.map(
-           database.songs,
-           &["<mdb_data>\n", emit(&1, song_fields), "</mdb_data>\n"]
-         ),
-         Enum.map(
-           database.courses,
-           &["<mdb_course>\n", emit(&1, course_fields), "</mdb_course>\n"]
-         ),
-         "</mdb>\n"
-       ])}
+      data = xml_container("data", emit(Database.header(database), Schema.header_fields(203)))
+      header = xml_container("header", [data])
+      songs = Enum.map(database.songs, &xml_container("mdb_data", emit(&1, song_fields)))
+      courses = Enum.map(database.courses, &xml_container("mdb_course", emit(&1, course_fields)))
+
+      xml =
+        "mdb"
+        |> xml_container([header] ++ songs ++ courses)
+        |> Saxy.encode!(version: "1.0", encoding: "UTF-8")
+        |> String.replace("\r", "&#13;")
+
+      {:ok, xml <> "\n"}
     end
   end
 
@@ -219,10 +216,15 @@ defmodule GfdmMdb.Codec.Xml do
     )
   end
 
+  defp xml_container(name, children) do
+    content = ["\n" | Enum.flat_map(children, &[&1, "\n"])]
+    Saxy.XML.element(name, [], content)
+  end
+
   defp emit(record, fields) do
     Enum.map(Layout.fields(fields), fn field ->
       value = Layout.value(record, field)
-      count = if field.count == 1, do: "", else: " __count=\"#{field.count}\""
+      count = if field.count == 1, do: [], else: [__count: field.count]
 
       text =
         if is_list(value) do
@@ -231,11 +233,7 @@ defmodule GfdmMdb.Codec.Xml do
           to_string(value)
         end
 
-      [
-        "<#{field.name} __type=\"#{field.type}\"#{count}>",
-        escape(text),
-        "</#{field.name}>\n"
-      ]
+      Saxy.XML.element(field.name, [__type: field.type] ++ count, Saxy.XML.characters(text))
     end)
   end
 
@@ -261,13 +259,5 @@ defmodule GfdmMdb.Codec.Xml do
         id
       )
     end)
-  end
-
-  defp escape(text) do
-    text
-    |> String.replace("&", "&amp;")
-    |> String.replace("<", "&lt;")
-    |> String.replace(">", "&gt;")
-    |> String.replace("\r", "&#13;")
   end
 end
