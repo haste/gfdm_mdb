@@ -52,7 +52,9 @@ defmodule GfdmMdb.Conversion do
       }
 
       issues = List.flatten(issues) ++ header_loss(database, target)
-      ready = Enum.all?(issues, &(&1.kind == :removed and Keyword.get(opts, :allow_loss, false)))
+
+      blockers =
+        Enum.reject(issues, &(&1.kind == :removed and Keyword.get(opts, :allow_loss, false)))
 
       report = %{
         source: %{format: database.format, schema_version: database.schema_version},
@@ -60,15 +62,11 @@ defmodule GfdmMdb.Conversion do
         issues: issues
       }
 
-      if ready do
+      if blockers == [] do
         Result.new({:ok, candidate}, %{conversion: report})
       else
         Result.error(
-          Result.diagnostic(
-            :conversion,
-            "",
-            "Conversion requires explicit values or loss permission"
-          ),
+          conversion_error(blockers),
           %Result{database: candidate, reports: %{conversion: report}}
         )
       end
@@ -80,6 +78,25 @@ defmodule GfdmMdb.Conversion do
   ###
   ### Helpers
   ###
+
+  defp conversion_error(issues) do
+    message =
+      issues
+      |> Enum.map(& &1.kind)
+      |> Enum.uniq()
+      |> Enum.map_join(". ", &required_action/1)
+
+    Result.diagnostic(:conversion, "", message)
+  end
+
+  defp required_action(:missing),
+    do: "Missing target fields require --defaults or --overrides"
+
+  defp required_action(:incompatible),
+    do: "Incompatible target values require --overrides"
+
+  defp required_action(:removed),
+    do: "Removing source fields requires --allow-loss"
 
   defp validate_options(defaults, overrides, fields, database) do
     with :ok <-

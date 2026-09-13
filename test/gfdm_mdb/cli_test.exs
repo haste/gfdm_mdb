@@ -385,7 +385,7 @@ defmodule GfdmMdb.CliTest do
         assert Cli.run(List.delete(args, "--json")) == 1
       end)
 
-    assert text =~ "Conversion requires explicit values or loss permission"
+    assert text =~ "Removing source fields requires --allow-loss"
     assert text =~ "removed: songs.genre [ID 1120]"
 
     args = List.insert_at(args, 1, "--allow-loss")

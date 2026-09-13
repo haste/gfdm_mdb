@@ -198,9 +198,13 @@ defmodule GfdmMdb.WorkflowTest do
     assert converted.schema_version == 2
     assert hd(converted.songs)["disable_area"] == [0, 0]
 
-    assert %{errors: [_], reports: %{conversion: %{issues: issues}}} =
-             GfdmMdb.transform(Fixture.database(102), "convert", target: {202, nil})
+    assert %{errors: [%{message: message}], reports: %{conversion: %{issues: issues}}} =
+             GfdmMdb.transform(Fixture.database(102), "convert",
+               target: {202, nil},
+               allow_loss: true
+             )
 
+    assert message == "Missing target fields require --defaults or --overrides"
     assert Enum.any?(issues, &(&1.path == "songs.first_modern_ver" and &1.kind == :missing))
 
     assert %{errors: [%{code: :unknown_field}]} =

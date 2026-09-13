@@ -33,7 +33,10 @@ defmodule GfdmMdb.Cli.Definition do
     },
     defaults: %{help: "Fill missing song fields from JSON during conversion."},
     overrides: %{help: "Read per-song conversion overrides."},
-    allow_loss: %{action: {:store, true}, help: "Allow conversion to remove fields."},
+    allow_loss: %{
+      action: {:store, true},
+      help: "Allow conversion to remove fields. Missing values still need defaults."
+    },
     record: %{help: "Read a new record from JSON."},
     new_id: %{type: :integer, help: "Assign the cloned record's ID."},
     patch: %{help: "Read record changes from JSON."},
