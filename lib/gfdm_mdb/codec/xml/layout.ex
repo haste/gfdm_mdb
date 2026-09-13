@@ -1,7 +1,7 @@
 defmodule GfdmMdb.Codec.Xml.Layout do
   @moduledoc "Maps canonical record fields to format-203 XML tags and flat difficulty arrays."
 
-  alias GfdmMdb.{Record, Schema, Validation}
+  alias GfdmMdb.{Schema, Validation}
   alias GfdmMdb.Schema.Field
 
   @names %{
@@ -30,8 +30,8 @@ defmodule GfdmMdb.Codec.Xml.Layout do
   @spec record([{map(), term()}]) :: map()
   def record(pairs) do
     Enum.reduce(pairs, %{}, fn {field, value}, record ->
-      patch = Enum.reduce(Enum.reverse(field.path), value, &%{&1 => &2})
-      Record.merge(record, patch)
+      path = Enum.map(field.path, &Access.key(&1, %{}))
+      put_in(record, path, value)
     end)
   end
 
