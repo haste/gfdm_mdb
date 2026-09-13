@@ -25,7 +25,7 @@ defmodule GfdmMdb.Schema.Field do
   def object(name, fields), do: %__MODULE__{name: name, type: :object, count: 1, fields: fields}
 
   @spec width(t()) :: pos_integer()
-  def width(%{type: :object, fields: fields}), do: Enum.sum(Enum.map(fields, &width/1))
+  def width(%{type: :object, fields: fields}), do: Enum.sum_by(fields, &width/1)
   def width(%{type: type, count: count}) when type in [:hex, :title], do: count
   def width(%{type: type, count: count}), do: div(bits(type), 8) * count
 

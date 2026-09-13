@@ -105,7 +105,7 @@ defmodule GfdmMdb.Schema do
   end
 
   @spec width([Field.t()]) :: non_neg_integer()
-  def width(fields), do: Enum.sum(Enum.map(fields, &Field.width/1))
+  def width(fields), do: Enum.sum_by(fields, &Field.width/1)
 
   @spec metadata_fields(format()) :: [Field.t()]
   def metadata_fields(format) do
