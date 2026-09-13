@@ -49,7 +49,7 @@ jobs:
         run: mix deps.get
 
       - name: Run checks
-        run: mise run check
+        run: mix ci
 
   build:
     name: Build ${{ matrix.target }}

@@ -21,12 +21,7 @@ run = "mix credo --strict"
 
 [tasks.check]
 description = "Run every local quality gate"
-run = [
-  "mix format --check-formatted",
-  "mix compile --warnings-as-errors",
-  "mix test",
-  "mix credo --strict",
-]
+run = "mix ci"
 
 [tasks.release]
 description = "Build the Linux x86-64 Burrito executable"

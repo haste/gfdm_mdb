@@ -10,12 +10,20 @@ defmodule GfdmMdb.MixProject do
       elixirc_paths: elixirc_paths(Mix.env()),
       escript: [main_module: GfdmMdb.Cli],
       releases: releases(),
-      deps: deps()
+      deps: deps(),
+      dialyzer: [plt_add_apps: [:ex_unit, :mix]],
+      aliases: aliases()
     ]
   end
 
   def application do
     [extra_applications: [:crypto]] ++ application_mod(Mix.env())
+  end
+
+  def cli do
+    [
+      preferred_envs: [ci: :test]
+    ]
   end
 
   ###
@@ -44,11 +52,30 @@ defmodule GfdmMdb.MixProject do
 
   defp deps do
     [
+      {:reach, "~> 2.0", only: [:dev, :test], runtime: false},
+      {:ex_dna, "~> 1.0", only: [:dev, :test], runtime: false},
+      {:dialyxir, "~> 1.0", only: [:dev, :test], runtime: false},
+      {:vibe_kit, "~> 0.1"},
       {:owl, "~> 0.13.1"},
       {:saxy, "~> 1.6"},
       {:burrito, "~> 1.5.0", only: :prod, runtime: false},
       {:credo, "~> 1.7.19", only: [:dev, :test], runtime: false},
-      {:ex_slop, "~> 0.4.2", only: [:dev, :test], runtime: false}
+      {:ex_slop, "~> 0.4.2", only: [:dev, :test], runtime: false},
+      {:igniter, "~> 0.6", only: [:dev, :test]}
+    ]
+  end
+
+  defp aliases() do
+    [
+      ci: [
+        "compile --warnings-as-errors",
+        "format --check-formatted",
+        "test",
+        "credo --strict",
+        "dialyzer",
+        "ex_dna --max-clones 0",
+        "reach.check --arch --smells"
+      ]
     ]
   end
 end
